@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">ScanIt</string>
+    <string name="action_settings">Settings</string>
+    <string name="hello">Hello World, DatumDroidOCRActivity!</string>
+    <string name="button1_text">Take a Photo</string>
+    <string name="button2_text">Choose from photo gallery</string>
+    <string name="button3_text">Browse saved Documents</string>
+    <string name="text_hint">OCR Result will appear here</string>
+</resources>
