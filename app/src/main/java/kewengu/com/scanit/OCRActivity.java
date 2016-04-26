@@ -2,20 +2,22 @@ package kewengu.com.scanit;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.channels.FileChannel;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.List;
 
 import android.app.Activity;
 import android.content.ContentValues;
 import android.content.Intent;
 import android.content.res.AssetManager;
+import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteException;
 import android.graphics.Bitmap;
@@ -27,11 +29,16 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.provider.MediaStore;
 import android.text.Editable;
+import android.text.TextUtils;
+import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ListView;
+import android.widget.SimpleCursorAdapter;
 import android.widget.TextView;
+import android.widget.ViewFlipper;
 
 import com.googlecode.tesseract.android.TessBaseAPI;
 
@@ -56,11 +63,13 @@ public class OCRActivity extends Activity {
     private boolean fromLibrary = false;
 
     private static SQLiteDatabase database;
+    private DataBaseAdapter mdb;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
 
         Log.v(TAG, "Creating database...");
+        openDB();
         try {
             database = new DatabaseHelper(this).getWritableDatabase();
         }
@@ -116,7 +125,7 @@ public class OCRActivity extends Activity {
 
         super.onCreate(savedInstanceState);
 
-        setContentView(R.layout.main);
+        setContentView(R.layout.activity_main);
 
         // _image = (ImageView) findViewById(R.id.image);
         _field = (EditText) findViewById(R.id.field);
@@ -141,6 +150,7 @@ public class OCRActivity extends Activity {
         @Override
         public void onClick(View view) {
             _notification.setText("");
+            _field.setText("");
             Log.v(TAG, "Starting Camera app");
             startCameraActivity();
         }
@@ -152,6 +162,7 @@ public class OCRActivity extends Activity {
         public void onClick(View view) {
             fromLibrary = true;
             _notification.setText("");
+            _field.setText("");
             Intent intent = new Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
             startActivityForResult(intent, 0);
         }
@@ -162,6 +173,11 @@ public class OCRActivity extends Activity {
         @Override
         public void onClick(View view) {
             _notification.setText("");
+            _field.setText("");
+            setContentView(R.layout.document_list);
+            populateList();
+
+
 
         }
     }
@@ -190,8 +206,13 @@ public class OCRActivity extends Activity {
         }
     }
 
-    // Simple android photo capture:
-    // http://labs.makemachine.net/2010/03/simple-android-photo-capture/
+    @Override
+    public void onBackPressed()
+    {
+        setContentView(R.layout.activity_main);
+        Intent i = new Intent(getApplicationContext(), OCRActivity.class);
+        startActivity(i);
+    }
 
     protected void startCameraActivity() {
         File file = new File(path);
@@ -323,12 +344,20 @@ public class OCRActivity extends Activity {
 
         // Cycle done.
     }
-
+    //open data base
+    private void openDB(){
+        mdb = new DataBaseAdapter(this);
+        mdb.open();
+    }
     // Insert the create time and the content of document into the database
     private void insertToDatabase(String content) {
         Date time = Calendar.getInstance().getTime();
-        String timeStr = (new SimpleDateFormat("hh:mm:ss")).format(time);
+        String timeStr = time.toString();
+//        String timeStr = (new SimpleDateFormat("mm/dd/yy,hh:mm:ss")).format(time);
         ContentValues values = getDatabaseValues(timeStr, content);
+        if(!TextUtils.isEmpty(content)){
+            mdb.insertRow(content,timeStr);
+        }
         database.insert(DatabaseSchema.Table.NAME, null, values);
     }
 
@@ -340,21 +369,61 @@ public class OCRActivity extends Activity {
         return values;
     }
 
-    public static void copyFile(File src, File dst) throws IOException
-    {
-        FileChannel inChannel = new FileInputStream(src).getChannel();
-        FileChannel outChannel = new FileOutputStream(dst).getChannel();
-        try
-        {
-            inChannel.transferTo(0, inChannel.size(), outChannel);
-        }
-        finally
-        {
-            if (inChannel != null)
-                inChannel.close();
-            if (outChannel != null)
-                outChannel.close();
-        }
+
+    private DocumentCursorWrapper queryDocument(String whereClause, String[] whereArgs) {
+        Cursor cursor = database.query(
+                DatabaseSchema.Table.NAME,
+                null,
+                whereClause,
+                whereArgs,
+                null,
+                null,
+                null
+        );
+
+        return new DocumentCursorWrapper(cursor);
     }
+
+    private List<Document> getDocuments() {
+        List<Document> documents = new ArrayList<Document>();
+
+        DocumentCursorWrapper cursor = queryDocument(null, null);
+
+        cursor.moveToFirst();
+        while (!cursor.isAfterLast()) {
+            documents.add(cursor.getDocument());
+            cursor.moveToNext();
+        }
+        cursor.close();
+
+        return documents;
+    }
+
+    private void populateList(){
+        Cursor cursor = mdb.getAllRows();
+        String[] fromFieldName = new String[]{mdb.KEY_DATE,mdb.KEY_CONTENT};
+        int[] toViewID = new int[]{R.id.textView2,R.id.textView3};
+        SimpleCursorAdapter myAdapter = new SimpleCursorAdapter(getBaseContext(),R.layout.document_list_item,cursor,fromFieldName,toViewID,0);
+        ListView myList  = (ListView) findViewById(R.id.listView);
+        myList.setAdapter(myAdapter);
+    }
+
+
+//    public static void copyFile(File src, File dst) throws IOException
+//    {
+//        FileChannel inChannel = new FileInputStream(src).getChannel();
+//        FileChannel outChannel = new FileOutputStream(dst).getChannel();
+//        try
+//        {
+//            inChannel.transferTo(0, inChannel.size(), outChannel);
+//        }
+//        finally
+//        {
+//            if (inChannel != null)
+//                inChannel.close();
+//            if (outChannel != null)
+//                outChannel.close();
+//        }
+//    }
 
 }
