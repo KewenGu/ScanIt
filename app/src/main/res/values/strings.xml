@@ -1,5 +1,7 @@
 <resources>
     <string name="app_name">ScanIt</string>
+    <string name="document_list">Document Library</string>
+    <string name="document_profile">Document Profile</string>
     <string name="action_settings">Settings</string>
     <string name="hello">Hello World, DatumDroidOCRActivity!</string>
     <string name="button1_text">Take a Photo</string>

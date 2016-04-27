@@ -20,4 +20,5 @@ android {
 
 dependencies {
     compile 'com.rmtheis:tess-two:5.4.0'
+    compile fileTree(dir: 'libs', include: '*.jar')
 }

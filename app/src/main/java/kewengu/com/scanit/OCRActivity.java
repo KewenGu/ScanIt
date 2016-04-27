@@ -27,12 +27,17 @@ import android.media.ExifInterface;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.StrictMode;
 import android.provider.MediaStore;
+import android.provider.Settings;
 import android.text.Editable;
 import android.text.TextUtils;
 import android.util.DisplayMetrics;
 import android.util.Log;
+import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
+import android.widget.AdapterView;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ListView;
@@ -41,6 +46,8 @@ import android.widget.TextView;
 import android.widget.ViewFlipper;
 
 import com.googlecode.tesseract.android.TessBaseAPI;
+
+import org.w3c.dom.Text;
 
 public class OCRActivity extends Activity {
     public static final String DATA_PATH = Environment
@@ -62,9 +69,11 @@ public class OCRActivity extends Activity {
     private boolean taken;
     private boolean fromLibrary = false;
 
+    private int layer = 0;
+
     private static SQLiteDatabase database;
     private DataBaseAdapter mdb;
-
+    long mrowID = 0;
     @Override
     public void onCreate(Bundle savedInstanceState) {
 
@@ -125,6 +134,9 @@ public class OCRActivity extends Activity {
 
         super.onCreate(savedInstanceState);
 
+        StrictMode.ThreadPolicy policy = new StrictMode.ThreadPolicy.Builder().permitAll().build();
+        StrictMode.setThreadPolicy(policy);
+
         setContentView(R.layout.activity_main);
 
         // _image = (ImageView) findViewById(R.id.image);
@@ -175,6 +187,7 @@ public class OCRActivity extends Activity {
             _notification.setText("");
             _field.setText("");
             setContentView(R.layout.document_list);
+            layer = 1;
             populateList();
 
 
@@ -209,9 +222,17 @@ public class OCRActivity extends Activity {
     @Override
     public void onBackPressed()
     {
-        setContentView(R.layout.activity_main);
-        Intent i = new Intent(getApplicationContext(), OCRActivity.class);
-        startActivity(i);
+        if (layer == 2) {
+            setContentView(R.layout.document_list);
+            layer = 1;
+            populateList();
+        }
+        else {
+            setContentView(R.layout.activity_main);
+            layer = 0;
+            Intent i = new Intent(getApplicationContext(), OCRActivity.class);
+            startActivity(i);
+        }
     }
 
     protected void startCameraActivity() {
@@ -232,12 +253,16 @@ public class OCRActivity extends Activity {
         if (resultCode == RESULT_OK) {
             if (fromLibrary) {
                 Uri targetUri = data.getData();
-                OutputStream out =null;
-                Log.v(TAG,"targetURI: "+targetUri.getPath());
-                File targetImage = new File(targetUri.getPath());
-                Log.v(TAG,"path: "+path);
-//                File imageFile = new File(getRealPathFromURI(targetUri));
-//                copyFile(targetUri.getPath(),path);
+                String targetPath = getRealPathFromURI(targetUri);
+                Log.v(TAG, "targetURI: " + targetPath);
+                File targetImage = new File(targetPath);
+                Log.v(TAG, "path: " + path);
+                File destImage = new File(path);
+                try {
+                    copy(targetImage, destImage);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
             }
             fromLibrary = false;
             onPhotoTaken();
@@ -401,29 +426,75 @@ public class OCRActivity extends Activity {
 
     private void populateList(){
         Cursor cursor = mdb.getAllRows();
-        String[] fromFieldName = new String[]{mdb.KEY_DATE,mdb.KEY_CONTENT};
-        int[] toViewID = new int[]{R.id.textView2,R.id.textView3};
+        String[] fromFieldName = new String[]{mdb.KEY_DATE, mdb.KEY_CONTENT, mdb.KEY_ROWID};
+        int[] toViewID = new int[]{R.id.textView2, R.id.textView3, R.id.textView4};
         SimpleCursorAdapter myAdapter = new SimpleCursorAdapter(getBaseContext(),R.layout.document_list_item,cursor,fromFieldName,toViewID,0);
         ListView myList  = (ListView) findViewById(R.id.listView);
         myList.setAdapter(myAdapter);
+
+        myList.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+            @Override
+            public void onItemClick(AdapterView<?> adapterView, View view, int i, long l) {
+                TextView tv2 = (TextView) view.findViewById(R.id.textView2);
+                TextView tv3 = (TextView) view.findViewById(R.id.textView3);
+                TextView tv4 = (TextView) view.findViewById(R.id.textView4);
+                setContentView(R.layout.document_profile);
+                layer = 2;
+                final TextView tv5 = (TextView) findViewById(R.id.textView5);
+                final TextView tv6 = (TextView) findViewById(R.id.textView6);
+                tv5.setText(tv2.getText());
+                tv6.setText(tv3.getText());
+                mrowID = Long.parseLong(tv4.getText().toString());
+                Button delete = (Button) findViewById(R.id.delete_button);
+                Button share = (Button) findViewById(R.id.share_button);
+                delete.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View view) {
+                        mdb.deleteRow(mrowID);
+                        setContentView(R.layout.document_list);
+                        populateList();
+                    }
+                });
+                share.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View view) {
+                        Intent sendIntent = new Intent();
+                        sendIntent.setAction(Intent.ACTION_SEND);
+                        sendIntent.putExtra(Intent.EXTRA_TEXT, tv6.getText().toString());
+                        sendIntent.setType("text/plain");
+                        startActivity(Intent.createChooser(sendIntent, "Share to ..."));
+                    }
+                });
+
+            }
+        });
     }
 
 
-//    public static void copyFile(File src, File dst) throws IOException
-//    {
-//        FileChannel inChannel = new FileInputStream(src).getChannel();
-//        FileChannel outChannel = new FileOutputStream(dst).getChannel();
-//        try
-//        {
-//            inChannel.transferTo(0, inChannel.size(), outChannel);
-//        }
-//        finally
-//        {
-//            if (inChannel != null)
-//                inChannel.close();
-//            if (outChannel != null)
-//                outChannel.close();
-//        }
-//    }
+    public void copy(File src, File dst) throws IOException {
+        InputStream in = new FileInputStream(src);
+        OutputStream out = new FileOutputStream(dst);
 
+        // Transfer bytes from in to out
+        byte[] buf = new byte[1024];
+        int len;
+        while ((len = in.read(buf)) > 0) {
+            out.write(buf, 0, len);
+        }
+        in.close();
+        out.close();
+    }
+
+
+    public String getRealPathFromURI(Uri contentUri) {
+        String res = null;
+        String[] proj = { MediaStore.Images.Media.DATA };
+        Cursor cursor = getContentResolver().query(contentUri, proj, null, null, null);
+        if(cursor.moveToFirst()){;
+            int column_index = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATA);
+            res = cursor.getString(column_index);
+        }
+        cursor.close();
+        return res;
+    }
 }
